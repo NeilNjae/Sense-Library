@@ -1,4 +1,10 @@
-import serial, time, binascii, os, glob
+import serial
+import serial.tools
+import serial.tools.list_ports
+import time
+import binascii
+import os
+import glob
 from ctypes import c_uint8
 
 #sensor ids
@@ -24,21 +30,24 @@ class PySense(object):
     ser = serial.Serial()
     burst_length = 0
 
-    def scanWindows(self):
-        available = []
-        for i in range(256):
-            try:
-                s = serial.Serial(i)
-                available.append( [i, s.portstr] )
-                s.close()
-            except serial.SerialException:
-                pass
+    # def scanWindows(self):
+    #     available = []
+    #     for i in range(256):
+    #         try:
+    #             s = serial.Serial(i)
+    #             available.append( [i, s.portstr] )
+    #             s.close()
+    #         except serial.SerialException:
+    #             pass
 
-        return available
+    #     return available
         
-    def scanPosix(self):
-        """scan for available ports. return a list of device names."""
-        return glob.glob('/dev/ttyS*') + glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*')
+    # def scanPosix(self):
+    #     """scan for available ports. return a list of device names."""
+    #     return glob.glob('/dev/ttyS*') + glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*')
+
+    def avaialble_ports(self):
+        return [p[0] for p in serial.tools.list_ports()]
 
     def resetSenseBoard(self):
         global COMMAND_HEADER
