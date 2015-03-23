@@ -214,7 +214,11 @@ class PySense(object):
             elif os.name == 'posix':
                 return str(reply_1)
         
-    
+    def ping(self):
+        self.ser.write(COMMAND_HEADER+b'\x00'+b'\x00')
+        reply=self.ser.read(size=3)
+        return reply[1],reply[2]
+
 
     def burstModeOffAll(self):
         global COMMAND_HEADER
@@ -252,8 +256,6 @@ class PySense(object):
                     break
                 else:
                     self.ser.close()
-
-
             
         elif os.name == 'posix':
             for com in self.scanPosix():
@@ -261,7 +263,7 @@ class PySense(object):
                     self.ser = serial.Serial(com, 115200, timeout=1)
                     print ("trying to connect to " + str(com))
                     time.sleep(2)
-                    if self.pingSenseBoard() == '55ffaa0460':
+                    if self.pingSenseBoard() == "b'55ffaa0460'": #'55ffaa0460':
                         print ("Opening Serial port...")
                         time.sleep(2)
                         print ("Connected to sense at port: " + self.ser.name)
@@ -272,7 +274,6 @@ class PySense(object):
                 except serial.SerialException:
                     pass
                 
-
 
 
 
