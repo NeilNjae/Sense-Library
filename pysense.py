@@ -142,7 +142,7 @@ class PySense(object):
 
     def motor(self,steps,motor_id=0):
         """This turns the motor/stepper a number of steps decided by the user
-        
+
         NOTE TO USERS: numbers 1-128 will turn motor clockwise the appropriate number of steps;
         129-255 will turn motor anticlockwise 256 minus the number of steps stated.
         (e.g 254 = anticlockwise 2 steps, 200 = anticlockwise 56 steps, 100 = clockwise 100 steps)
@@ -174,40 +174,32 @@ class PySense(object):
         elif os.name == 'posix':
             return str(reply)
 
-    def dcMove(self, motor_id, direction, speed):
-        global COMMAND_HEADER
-        byte_1 = bytes(c_uint8( 128 + direction ))
-        byte_2 = bytes(c_uint8(speed*32 + motor_id))
-        self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply = binascii.hexlify(self.ser.read(size=3))
-        if os.name == 'nt':
-            return str(reply, 'ascii')
-        elif os.name == 'posix':
-            return str(reply)
-        
+    def dc_move(self, motor_id, speed, direction):
+        """ makes the motor move at a pre set speed and direction
+        0=clockwise, 1=anticlockwise
+        """
+        dir_byte = bytes([128 + direction])
+        speed_byte = bytes([speed*32 + motor_id])
+        self.ser.write(COMMAND_HEADER + dir_byte + speed_byte)
+        reply = self.ser.read(size=3)
 
-    def dcOff(self, motor_id):
-        global COMMAND_HEADER
-        byte_1 = '\x80'
-        byte_2 = bytes(c_uint8(motor_id))
-        self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply = binascii.hexlify(self.ser.read(size=3))
-        if os.name == 'nt':
-            return str(reply, 'ascii')
-        elif os.name == 'posix':
-            return str(reply)
+    def dc_off(self, motor_id):
+        """ turns a motor off
+        """
+        off_motor = bytes([motor_id])
+        self.ser.write(COMMAND_HEADER + '\x80' + off_motor)
+        reply = (self.ser.read(size=3))
 
-    def readSensor(self, sensor_id):
-        global COMMAND_HEADER
-        byte_1 = bytes(c_uint8(32 + sensor_id))
-        byte_2 = b'\x00'
-        self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply=binascii.hexlify(self.ser.read(size=4))
-        if os.name == 'nt':
-            string_reply = str(reply, 'ascii')
-        elif os.name == 'posix':
-            string_reply = str(reply)
-        return int(string_reply[5:], 16)
+    def read_sensor(self, sensor_id):
+        """ Shows whether a sensor is configured[0] or not[1] 
+        and the reading of a sensor, on a scale of 0-1023
+        """
+        byte_1 = bytes([32 + sensor_id])
+        self.ser.write(COMMAND_HEADER + byte_1 + b'\x00')
+        reply=self.ser.read(size=4)
+        hh=reply[2] & 3
+        ll=reply[3]
+        return round((reply[2]&4)/4), 256*hh+ll # int(string_reply[5:], 16)
 
     def burstModeSet(self, sensor_id_array):
         global COMMAND_HEADER
