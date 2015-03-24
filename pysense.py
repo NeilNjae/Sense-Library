@@ -142,6 +142,7 @@ class PySense(object):
 
     def motor(self,steps,motor_id=0):
         """This turns the motor/stepper a number of steps decided by the user
+        
         NOTE TO USERS: numbers 1-128 will turn motor clockwise the appropriate number of steps;
         129-255 will turn motor anticlockwise 256 minus the number of steps stated.
         (e.g 254 = anticlockwise 2 steps, 200 = anticlockwise 56 steps, 100 = clockwise 100 steps)
