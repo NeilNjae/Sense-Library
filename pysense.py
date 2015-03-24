@@ -51,40 +51,35 @@ class PySense(object):
         elif os.name == 'posix':
             return str(reply)
 
-    def pingSenseBoard(self):
-        global COMMAND_HEADER
-        byte_1 = b'\x00'
-        byte_2 = b'\x00'
-        self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply = binascii.hexlify(self.ser.read(size=5))
-        if os.name == 'nt':
-            return str(reply, 'ascii')
-        elif os.name == 'posix':
-            return str(reply)
+    # def pingSenseBoard(self):
+    #     global COMMAND_HEADER
+    #     byte_1 = b'\x00'
+    #     byte_2 = b'\x00'
+    #     self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
+    #     reply = binascii.hexlify(self.ser.read(size=5))
+    #     if os.name == 'nt':
+    #         return str(reply, 'ascii')
+    #     elif os.name == 'posix':
+    #         return str(reply)
+    def ping(self):
+        """Pings the sensboard and returns firmware version number
+        and board revision number.
+        """
+        self.ser.write(COMMAND_HEADER+b'\x00'+b'\x00')
+        reply=self.ser.read(size=5)
+        reply[3],reply[4]
     
-    def ledOn(self, led_id):
-        global COMMAND_HEADER
-        byte_1 = b'\xC1'
-        byte_2 = bytes(c_uint8(2**(led_id-1)))
-        self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
+    def led_on(self, led_id):
+        """ Turns a single L.E.D on, shouldn't return anything
+        """
+        led_byte = bytes([2**(led_id-1)])
+        self.ser.write(COMMAND_HEADER + b'\xC1' + led_byte)
+        reply = self.ser.read(size=3)
+
+    def led_off(self, led_id):
+        led_byte = bytes([2**(led_id-1)])
+        self.ser.write(COMMAND_HEADER + b'\xC0' + led_byte)
         reply = binascii.hexlify(self.ser.read(size=3))
-        led_id = 0
-        if os.name == 'nt':
-            return str(reply, 'ascii')
-        elif os.name == 'posix':
-            return str(reply)
-        
-    def ledOff(self, led_id):
-        global COMMAND_HEADER
-        byte_1 = b'\xC0'
-        byte_2 = bytes(c_uint8(2**(led_id-1)))
-        self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply = binascii.hexlify(self.ser.read(size=3))
-        led_id = 0
-        if os.name == 'nt':
-            return str(reply, 'ascii')
-        elif os.name == 'posix':
-            return str(reply)
     
     def ledMultiOn(self, led_id_array):
         global COMMAND_HEADER
@@ -214,10 +209,7 @@ class PySense(object):
             elif os.name == 'posix':
                 return str(reply_1)
         
-    def ping(self):
-        self.ser.write(COMMAND_HEADER+b'\x00'+b'\x00')
-        reply=self.ser.read(size=3)
-        return reply[1],reply[2]
+
 
 
     def burstModeOffAll(self):
