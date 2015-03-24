@@ -10,7 +10,8 @@ INPUT_A = 4
 INPUT_B = 5
 INPUT_C = 6
 INPUT_D = 7
-
+READINGS={"slider":0,"infrared":0,"microphone":0,"button":0,"input_a":0,"input_b":0,"input_c":0,"input_d":0}
+LIST=["slider","infrared","microphone","button","input_a","input_b","input_c","input_d"]
 #motor directions
 CLOCKWISE = 0
 ANTICLOCKWISE = 1
@@ -21,8 +22,9 @@ COMMAND_HEADER = b'\x54\xFE'
 #class for contolling 1 senseboard
 class PySense(object):
     
-    ser = serial.Serial()
-    burst_length = 0
+    self.ser = serial.Serial()
+    self.burst_length = 0
+
 
     def scanWindows(self):
         available = []
@@ -200,6 +202,24 @@ class PySense(object):
         hh=reply[2] & 3
         ll=reply[3]
         return round((reply[2]&4)/4), 256*hh+ll # int(string_reply[5:], 16)
+    
+    #all functions that use burst mode to read sensors here...
+    def slider():
+        return READINGS["slider"]
+    def infrared():
+        return READINGS["infrared"]
+    def button():
+        return READINGS["button"]
+    def microphone():
+        return READINGS["microphone"]
+    def input_a():
+        return READINGS["input_a"]
+    def input_b():
+        return READINGS["input_b"]
+    def input_c():
+        return READINGS["input_c"]
+    def input_d():
+        return READINGS["input_d"]
 
     def burstModeSet(self, sensor_id_array):
         global COMMAND_HEADER
@@ -249,11 +269,12 @@ class PySense(object):
         
 
     def readBursts(self):
-        burst_response = binascii.hexlify(self.ser.read(size=3*self.burst_length))
-        if os.name == 'nt':
-            return str(burst_repsonse, 'ascii')
-        elif os.name == 'posix':
-            return str(burst_response)
+        """updates the dictionary, READINGS, according to the burst response
+        """
+        burst_response = self.ser.read(size=3*self.burst_length)
+        sensor=(burst_response[1]&240) /16
+        new_reading=(burst_response[1]&3)*256+burst_response[2]
+        READINGS[LIST[sensor]]=new_reading
 
     def __init__(self):
         if os.name == 'nt':
