@@ -1,5 +1,4 @@
-import serial, time, binascii, os, glob
-from ctypes import c_uint8
+import serial, time, binascii, os, glob, queue, threading
 
 #sensor ids
 SLIDER = 0
@@ -15,16 +14,52 @@ LIST=["slider","infrared","microphone","button","input_a","input_b","input_c","i
 #motor directions
 CLOCKWISE = 0
 ANTICLOCKWISE = 1
-
 #header
 COMMAND_HEADER = b'\x54\xFE'
-
+ready_to_interpret=threading.event()
+buffer_list=[]
 #class for contolling 1 senseboard
 class PySense(object):
-    
-    self.ser = serial.Serial()
-    self.burst_length = 0
 
+    def reading_senseboard(self):
+        while True:
+            sensor_bursts.put(self.ser.read(size=1))
+            ready_to_interpret.set()
+
+    def interpret_senseboard(self):
+        while True:
+            ready_to_interpret.wait()
+            while not sensor_bursts.empty():
+                buffer_list.append(sensor_bursts.get())
+                if buffer_list[0] != 85 and buffer_list[0] != 12:
+                    buffer_list.remove(buffer_list[0:1])
+                elif len(buffer_list>=3):
+                    if buffer_list[0]==85 and buffer_list[1]==255 and buffer_list[2]==170:#ack removal
+                        for i in range(3):
+                            buffer_list.remove(buffer_list[i:i+1])
+                    elif buffer_list[0]==12:#burst reciever
+                        READINGS[LIST[round((buffer_list[1]&240)/16)]]=(buffer_list[1]&3)*256+buffer_list[2]
+                        for i in range(3):
+                            buffer_list.remove(buffer_list[i:i+1])
+                    elif buffer_list[0] != 85 or buffer_list[1] != 255:#anti-glitch code...
+                        buffer_list.remove(buffer_list[0:1])
+                        buffer_list.remove(buffer_list[1:2])
+                    elif len(buffer_list)>=4:#sensor reader
+                        READINGS[LIST[round((buffer_list[2]&240)/16)]]=(buffer_list[2]&3)*256+buffer_list[3]
+                        for i in range(4):
+                            buffer_list.remove(buffer_list[i:i+1]) 
+                    else:
+                        pass
+                else:
+                    pass
+            ready_to_interpret.clear()
+
+
+
+    threading.Thread(name=reader,target=reading_senseboard)
+    threading.Thread(name=interpreter,target=interpret_senseboard)
+    reader.run()
+    interpreter.run()
 
     def scanWindows(self):
         available = []
@@ -45,7 +80,6 @@ class PySense(object):
     def reset_sense_board(self):
         """resets the sense board, turning all devices off"""
         self.ser.write(COMMAND_HEADER+b'\x10\x00')
-        reply=self.ser.read(size=3)
         # global COMMAND_HEADER
         # byte_1 = b'\x10'
         # byte_2 = b'\x00'
@@ -79,14 +113,12 @@ class PySense(object):
         """
         led_byte = bytes([2**(led_id-1)])
         self.ser.write(COMMAND_HEADER + b'\xC1' + led_byte)
-        reply = self.ser.read(size=3)
 
     def led_off(self, led_id):
         """Turns a single LED off
         """
         led_byte = bytes([2**(led_id-1)])
         self.ser.write(COMMAND_HEADER + b'\xC0' + led_byte)
-        reply = self.ser.read(size=3)
     
     def led_multi_on(self, led_id_array):
         """ Turns many LEDs on, as determined by the user's list
@@ -96,7 +128,6 @@ class PySense(object):
             led_id_total+=(2**(i-1))
         led_byte = bytes([led_id_total])
         self.ser.write(COMMAND_HEADER + b'\xC1' + led_byte)
-        reply =self.ser.read(size=3)
 
     def led_multi_off(self, led_id_array):
         """ Turns many LEDs off, as determined by the user's list
@@ -106,7 +137,6 @@ class PySense(object):
             led_id_total+=(2**(i-1))
         led_byte = bytes([led_id_total])
         self.ser.write(COMMAND_HEADER + b'\xC0' + led_byte)
-        reply =self.ser.read(size=3)
         # global COMMAND_HEADER
         # led_id_total = 0
         # byte_1 = b'\xC0'
@@ -152,7 +182,6 @@ class PySense(object):
         byte_1 = bytes([240 + motor_id])
         byte_2 = bytes([steps])
         self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply = binascii.hexlify(self.ser.read(size=3))
         
     # def stepperMove(self, motor_id, steps):
     #     byte_1 = bytes([240 + motor_id])
@@ -167,14 +196,9 @@ class PySense(object):
 
     def servoSetPosition(self, servo_id, angle):
         global COMMAND_HEADER
-        byte_1 = bytes(c_uint8(208+ servo_id))
-        byte_2 = bytes(c_uint8(angle))
+        byte_1 = bytes([208+ servo_id])
+        byte_2 = bytes([angle])
         self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply = binascii.hexlify(self.ser.read(size=3))
-        if os.name == 'nt':
-            return str(reply, 'ascii')
-        elif os.name == 'posix':
-            return str(reply)
 
     def dc_move(self, motor_id, speed, direction):
         """ makes the motor move at a pre set speed and direction
@@ -183,14 +207,12 @@ class PySense(object):
         dir_byte = bytes([128 + direction])
         speed_byte = bytes([speed*32 + motor_id])
         self.ser.write(COMMAND_HEADER + dir_byte + speed_byte)
-        reply = self.ser.read(size=3)
 
     def dc_off(self, motor_id):
         """ turns a motor off
         """
         off_motor = bytes([motor_id])
         self.ser.write(COMMAND_HEADER + '\x80' + off_motor)
-        reply = (self.ser.read(size=3))
 
     def read_sensor(self, sensor_id):
         """ Shows whether a sensor is configured[0] or not[1] 
@@ -198,10 +220,7 @@ class PySense(object):
         """
         byte_1 = bytes([32 + sensor_id])
         self.ser.write(COMMAND_HEADER + byte_1 + b'\x00')
-        reply=self.ser.read(size=4)
-        hh=reply[2] & 3
-        ll=reply[3]
-        return round((reply[2]&4)/4), 256*hh+ll # int(string_reply[5:], 16)
+        return READINGS[LIST[sensor_id]]
     
     #all functions that use burst mode to read sensors here...
     def slider():
@@ -234,11 +253,11 @@ class PySense(object):
 
 
         byte_1 = b'\xA0'
-        byte_2 = bytes(c_uint8(sensor_id_total_0_to_7))
+        byte_2 = bytes([sensor_id_total_0_to_7])
         self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
         reply_1 = binascii.hexlify(self.ser.read(size=3))
         byte_1 = b'\xA1'
-        byte_2 = bytes(c_uint8(sensor_id_total_8_to_15))
+        byte_2 = bytes([sensor_id_total_8_to_15])
         self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
         reply_2 = binascii.hexlify(self.ser.read(size=3))
         self.burst_length = len(sensor_id_array)
@@ -266,17 +285,11 @@ class PySense(object):
             elif os.name == 'posix':
                 return str(reply_1)
             
-        
-
-    def readBursts(self):
-        """updates the dictionary, READINGS, according to the burst response
-        """
-        burst_response = self.ser.read(size=3*self.burst_length)
-        sensor=(burst_response[1]&240) /16
-        new_reading=(burst_response[1]&3)*256+burst_response[2]
-        READINGS[LIST[sensor]]=new_reading
-
     def __init__(self):
+        self.sensor_bursts=queue.Queue()
+        self.ser = serial.Serial()
+        self.burst_length = 0
+
         if os.name == 'nt':
             for com in self.scanWindows():
                 self.ser = serial.Serial(int(com[0]), 115200, timeout=1)
