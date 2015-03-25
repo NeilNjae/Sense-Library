@@ -16,50 +16,14 @@ CLOCKWISE = 0
 ANTICLOCKWISE = 1
 #header
 COMMAND_HEADER = b'\x54\xFE'
-ready_to_interpret=threading.event()
+ready_to_interpret=threading.Event()
 buffer_list=[]
 #class for contolling 1 senseboard
 class PySense(object):
 
-    def reading_senseboard(self):
-        while True:
-            sensor_bursts.put(self.ser.read(size=1))
-            ready_to_interpret.set()
-
-    def interpret_senseboard(self):
-        while True:
-            ready_to_interpret.wait()
-            while not sensor_bursts.empty():
-                buffer_list.append(sensor_bursts.get())
-                if buffer_list[0] != 85 and buffer_list[0] != 12:
-                    buffer_list.remove(buffer_list[0:1])
-                elif len(buffer_list>=3):
-                    if buffer_list[0]==85 and buffer_list[1]==255 and buffer_list[2]==170:#ack removal
-                        for i in range(3):
-                            buffer_list.remove(buffer_list[i:i+1])
-                    elif buffer_list[0]==12:#burst reciever
-                        READINGS[LIST[round((buffer_list[1]&240)/16)]]=(buffer_list[1]&3)*256+buffer_list[2]
-                        for i in range(3):
-                            buffer_list.remove(buffer_list[i:i+1])
-                    elif buffer_list[0] != 85 or buffer_list[1] != 255:#anti-glitch code...
-                        buffer_list.remove(buffer_list[0:1])
-                        buffer_list.remove(buffer_list[1:2])
-                    elif len(buffer_list)>=4:#sensor reader
-                        READINGS[LIST[round((buffer_list[2]&240)/16)]]=(buffer_list[2]&3)*256+buffer_list[3]
-                        for i in range(4):
-                            buffer_list.remove(buffer_list[i:i+1]) 
-                    else:
-                        pass
-                else:
-                    pass
-            ready_to_interpret.clear()
-
-
-
-    threading.Thread(name=reader,target=reading_senseboard)
-    threading.Thread(name=interpreter,target=interpret_senseboard)
-    reader.run()
-    interpreter.run()
+    def message_reciever(self):
+        reader.run()
+        interpreter.run()
 
     def scanWindows(self):
         available = []
@@ -284,11 +248,64 @@ class PySense(object):
                 return str(reply_1, 'ascii')
             elif os.name == 'posix':
                 return str(reply_1)
+
+    def reading_senseboard(self):
+        """This function gives interpret_senseboard data from the senseboard
+        """
+        while True:
+            sensor_bursts.put(self.ser.read(size=1))
+            ready_to_interpret.set()
+
+    def interpret_senseboard_II(buffer_list):
+        """This removes any junk bytes at the beginning of buffer_list and 
+        responds to a legitimate reading that is picked up.
+        """
+        while buffer_list and buffer_list[0] != 85 and buffer_list[0] != 12:#removes invalid bytes
+            buffer_list.remove(buffer_list[0:1])
+        if len(buffer_list)>=3 and buffer_list[0]==85 and buffer_list[1]==255 and buffer_list[2]==170:#ack removal
+            for i in range(3):
+                buffer_list.remove(buffer_list[i:i+1])
+            return False
+        elif len(buffer_list)>=3 and buffer_list[0]==12:#burst reciever
+            READINGS[LIST[round((buffer_list[1]&240)/16)]]=(buffer_list[1]&3)*256+buffer_list[2]
+            for i in range(3):
+                buffer_list.remove(buffer_list[i:i+1])
+            return False
+        elif len(buffer_list)>=2 and buffer_list[1] != 255:#anti-glitch code...
+            buffer_list.remove(buffer_list[0:1])
+            return False
+        elif len(buffer_list)>=4 and buffer_list[0]==85 and buffer_list[1]==255:#sensor reader
+            READINGS[LIST[round((buffer_list[2]&240)/16)]]=(buffer_list[2]&3)*256+buffer_list[3]
+            for i in range(4):
+                buffer_list.remove(buffer_list[i:i+1])
+                return False
+        else:
+            return True
+
+    def interpret_senseboard(self):
+        """This collects data from a queue and sends it to interpret_senseboard_II, it also
+        puts the thread to sleep (temporarily!) when it can't make a valid reading AND there
+        aren't any junk bytes to remove.
+        """
+        while True:
+            ready_to_interpret.wait()
+            while not sensor_bursts.empty():
+                buffer_list.append(sensor_bursts.get())
+            read_all=False
+
+            while not read_all:
+                if buffer_list:
+                    read_all=interpret_senseboard_II(buffer_list)
+                else:
+                    read_all=True
+            ready_to_interpret.clear()
             
     def __init__(self):
         self.sensor_bursts=queue.Queue()
         self.ser = serial.Serial()
         self.burst_length = 0
+        self.reader=threading.Thread(target=self.reading_senseboard)
+        self.interpreter=threading.Thread(target=self.interpret_senseboard)
 
         if os.name == 'nt':
             for com in self.scanWindows():
