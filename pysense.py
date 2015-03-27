@@ -23,6 +23,8 @@ BURST_HEADER = b'\x0C'
 #class for contolling 1 senseboard
 class PySense(object):
 
+    connected_ports = []
+
     def scanWindows(self):
         available = []
         for i in range(256):
@@ -68,7 +70,10 @@ class PySense(object):
         """
         self.ser.write(COMMAND_HEADER+b'\x00'+b'\x00')
         reply=self.ser.read(size=5)
-        return [reply[3],reply[4]]
+        if len(reply) >= 5:
+            return [reply[3],reply[4]]
+        else:
+            return [0, 0]
     
     def led_on(self, led_id):
         """ Turns a single L.E.D on, shouldn't return anything
@@ -282,7 +287,6 @@ class PySense(object):
         self.READINGS={0:0, 1:0, 2:0, 3:0,4:0,5:0,6:0,7:0}
         self.ser = serial.Serial()
         self.burst_length = 0
-        self.ready_to_interpret=threading.Event()
         self.buffer_list=[]
 
         if os.name == 'nt':
@@ -300,16 +304,20 @@ class PySense(object):
         elif os.name == 'posix':
             for com in self.scanPosix():
                 try:
-                    self.ser = serial.Serial(com, 115200, timeout=1)
-                    print ("trying to connect to " + str(com))
-                    time.sleep(2)
-                    if self.ping() == [4,96]: #'55ffaa0460':
-                        print ("Opening Serial port...")
+                    # skip if com is in connected ports
+                    if com not in self.__class__.connected_ports:
+                        self.ser = serial.Serial(com, 115200, timeout=None)
+                        print ("trying to connect to " + str(com))
                         time.sleep(2)
-                        print ("Connected to sense at port: " + self.ser.name)
-                        break
-                    else:
-                        self.ser.close()
+                        if self.ping() == [4,96]: #'55ffaa0460':
+                            print ("Opening Serial port...")
+                            time.sleep(2)
+                            print ("Connected to sense at port: " + self.ser.name)
+                            # update connected ports
+                            self.__class__.connected_ports.append(com)
+                            break
+                        else:
+                            self.ser.close()
 
                 except serial.SerialException:
                     pass
