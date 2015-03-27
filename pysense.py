@@ -209,20 +209,11 @@ class PySense(object):
         self.burst_length = len(sensor_id_array)
         
     def burstModeOffAll(self):
-        global COMMAND_HEADER
-        byte_1 = b'\xA0'
-        byte_2 = b'\x00'
-        self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply_1 = binascii.hexlify(self.ser.read(size=3))
-        byte_1 = b'\xA1'
-        self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply_2 = binascii.hexlify(self.ser.read(size=3))
-        if reply_1 == reply_2:
-            if os.name == 'nt':
-                return str(reply_1, 'ascii')
-            elif os.name == 'posix':
-                return str(reply_1)
-
+        """Turns burst mode off
+        """
+        self.ser.write(COMMAND_HEADER + b'\xA0\x00')
+        self.ser.write(COMMAND_HEADER + b'\xA1\x00')
+        
     def reading_senseboard(self):
         """This function gives interpret_senseboard data from the senseboard
         """
