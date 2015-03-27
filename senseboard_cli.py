@@ -45,5 +45,7 @@ while not finished:
 	elif command_line[0] == 's':
 		sv = senseboard.sensor_value(int(command_line[1]))
 		print(sv)
+	elif command_line[0] == 'b':
+		senseboard.burstModeSet([0, 2, 3])
 	elif command_line[0] == 'q':
 		finished = True

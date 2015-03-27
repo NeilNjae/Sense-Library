@@ -191,7 +191,7 @@ class PySense(object):
         return self.READINGS[sensor_id]
  
     def burstModeSet(self, sensor_id_array):
-        global COMMAND_HEADER
+        # global COMMAND_HEADER
         sensor_id_total_0_to_7 = 0
         sensor_id_total_8_to_15 = 0
         for i in sensor_id_array:
@@ -205,21 +205,11 @@ class PySense(object):
         byte_1 = b'\xA0'
         byte_2 = bytes([sensor_id_total_0_to_7])
         self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply_1 = binasciiexlify(self.ser.read(size=3))
         byte_1 = b'\xA1'
         byte_2 = bytes([sensor_id_total_8_to_15])
         self.ser.write(COMMAND_HEADER + byte_1 + byte_2)
-        reply_2 = binascii.hexlify(self.ser.read(size=3))
         self.burst_length = len(sensor_id_array)
-        if reply_1 == reply_2:
-            if os.name == 'nt':
-                return str(reply_1, 'ascii')
-            elif os.name == 'posix':
-                return str(reply_1)
         
-
-
-
     def burstModeOffAll(self):
         global COMMAND_HEADER
         byte_1 = b'\xA0'
@@ -239,27 +229,30 @@ class PySense(object):
         """This function gives interpret_senseboard data from the senseboard
         """
         while True:
-            print("Waiting for Senseboard")
+            # print("Waiting for Senseboard")
             byte_read = self.ser.read(size=1)
-            print("Read", byte_read)
+            # print("Read", byte_read)
             self.sensor_bursts.put(byte_read)
 
     def interpret_senseboard_II(self):
         """This removes any junk bytes at the beginning of buffer_list and 
         responds to a legitimate reading that is picked up.
         """
-        while self.buffer_list and self.buffer_list[0] != REPLY_HEADER[0]: #and 
-                #self.buffer_list[0] != BURST_HEADER[0]:#removes invalid bytes
+        while self.buffer_list and (self.buffer_list[0] != REPLY_HEADER[0] and self.buffer_list[0] != BURST_HEADER[0]):#removes invalid bytes
             print("Dropping first byte with value", self.buffer_list[0], self.buffer_list[0] != REPLY_HEADER[0])
             self.buffer_list = self.buffer_list[1:]
         if self.buffer_list[:3] == [85, 255, 170]:#ack removal
             print("Ack removed")
             self.buffer_list = self.buffer_list[3:]
             return False
-        elif len(self.buffer_list)>=3 and self.buffer_list[0]==12:#burst reciever
-            self.READINGS[self.READINGS.keys()[round((self.buffer_list[1]&240)/16)]]=(self.buffer_list[1]&3)*256+self.buffer_list[2]
+        elif len(self.buffer_list)>=3 and self.buffer_list[0]==BURST_HEADER[0]:#burst reciever
+            sn = round((self.buffer_list[1]&240)/16)
+            sv = (self.buffer_list[1]&3)*256+self.buffer_list[2]
+            print("recieved a burst: sensor", sn, "Value", sv)
+            self.READINGS[sn] = sv
+            #self.READINGS[[round((self.buffer_list[1]&240)/16)]]=(self.buffer_list[1]&3)*256+self.buffer_list[2]
             self.buffer_list = self.buffer_list[3:]
-        elif len(self.buffer_list)>=2 and self.buffer_list[1] != 255:#anti-glitch code...
+        elif len(self.buffer_list)>=2 and self.buffer_list[0] == REPLY_HEADER[0] and self.buffer_list[1] != REPLY_HEADER[1]:#anti-glitch code...
             self.buffer_list = self.buffer_list[1:]
             return False
         elif len(self.buffer_list)>=4 and self.buffer_list[0]==85 and self.buffer_list[1]==255:#sensor reader
@@ -279,20 +272,20 @@ class PySense(object):
         aren't any junk bytes to remove.
         """
         while True:
-            print("waiting for data")
+            #print("waiting for data")
             bytes_read = self.sensor_bursts.get()
             for b in bytes_read:
                 self.buffer_list.append(b)
             #self.buffer_list.append(self.sensor_bursts.get())
-            print("found data")
+            #print("found data")
             read_all=False
             while not read_all:
-                print("Starting interpretation")
+             #   print("Starting interpretation")
                 if self.buffer_list:
-                    print("Interpreting buffer of", len(self.buffer_list), "bytes")
+              #      print("Interpreting buffer of", len(self.buffer_list), "bytes")
                     read_all=self.interpret_senseboard_II()
                 else:
-                    print("Buffer empty")
+               #     print("Buffer empty")
                     read_all=True
             
     def __init__(self):
