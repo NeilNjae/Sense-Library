@@ -16,6 +16,10 @@ ANTICLOCKWISE = 1
 #header
 COMMAND_HEADER = b'\x54\xFE'
 
+REPLY_HEADER = b'\x55\xFF'
+REPLY_ACK = b'\x55\xFF\xAA'
+BURST_HEADER = b'\x0C'
+
 #class for contolling 1 senseboard
 class PySense(object):
 
@@ -155,7 +159,6 @@ class PySense(object):
     #     elif os.name == 'posix':
     #         return str(reply)
         
-
     def servoSetPosition(self, servo_id, angle):
         global COMMAND_HEADER
         byte_1 = bytes([208+ servo_id])
@@ -245,7 +248,9 @@ class PySense(object):
         """This removes any junk bytes at the beginning of buffer_list and 
         responds to a legitimate reading that is picked up.
         """
-        while self.buffer_list and self.buffer_list[0] != 85 and self.buffer_list[0] != 12:#removes invalid bytes
+        while self.buffer_list and self.buffer_list[0] != REPLY_HEADER[0]: #and 
+                #self.buffer_list[0] != BURST_HEADER[0]:#removes invalid bytes
+            print("Dropping first byte with value", self.buffer_list[0], self.buffer_list[0] != REPLY_HEADER[0])
             self.buffer_list = self.buffer_list[1:]
         if self.buffer_list[:3] == [85, 255, 170]:#ack removal
             print("Ack removed")
@@ -274,20 +279,25 @@ class PySense(object):
         aren't any junk bytes to remove.
         """
         while True:
-            "waiting for data"
-            self.buffer_list.append(self.sensor_bursts.get())
-            "found data"
+            print("waiting for data")
+            bytes_read = self.sensor_bursts.get()
+            for b in bytes_read:
+                self.buffer_list.append(b)
+            #self.buffer_list.append(self.sensor_bursts.get())
+            print("found data")
             read_all=False
             while not read_all:
+                print("Starting interpretation")
                 if self.buffer_list:
+                    print("Interpreting buffer of", len(self.buffer_list), "bytes")
                     read_all=self.interpret_senseboard_II()
                 else:
+                    print("Buffer empty")
                     read_all=True
-            self.ready_to_interpret.clear()
             
     def __init__(self):
         self.sensor_bursts=queue.Queue()
-        self.READINGS={SLIDER:0, INFRARED:0, MICROPHONE:0, BUTTON:0,INPUT_A:0,INPUT_B:0,INPUT_C:0,INPUT_D:0}
+        self.READINGS={0:0, 1:0, 2:0, 3:0,4:0,5:0,6:0,7:0}
         self.ser = serial.Serial()
         self.burst_length = 0
         self.ready_to_interpret=threading.Event()
