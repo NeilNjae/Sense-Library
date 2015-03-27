@@ -182,7 +182,10 @@ class PySense(object):
         """
         byte_1 = bytes([32 + sensor_id])
         self.ser.write(COMMAND_HEADER + byte_1 + b'\x00')
-        return self.READINGS[self.LIST[sensor_id]]
+        # return self.READINGS[sensor_id]
+
+    def sensor_value(self, sensor_id):
+        return self.READINGS[sensor_id]
  
     def burstModeSet(self, sensor_id_array):
         global COMMAND_HEADER
@@ -234,34 +237,36 @@ class PySense(object):
         """
         while True:
             print("Waiting for Senseboard")
-            self.sensor_bursts.put(self.ser.read(size=1))
-            self.ready_to_interpret.set()
+            byte_read = self.ser.read(size=1)
+            print("Read", byte_read)
+            self.sensor_bursts.put(byte_read)
 
     def interpret_senseboard_II(self):
         """This removes any junk bytes at the beginning of buffer_list and 
         responds to a legitimate reading that is picked up.
         """
         while self.buffer_list and self.buffer_list[0] != 85 and self.buffer_list[0] != 12:#removes invalid bytes
-            self.buffer_list.remove(self.buffer_list[0:1])
-        if len(self.buffer_list)>=3 and self.buffer_list[0]==85 and self.buffer_list[1]==255 and self.buffer_list[2]==170:#ack removal
-            for i in range(3):
-                self.buffer_list.remove(self.buffer_list[i:i+1])
-            return self.buffer_list ,False
+            self.buffer_list = self.buffer_list[1:]
+        if self.buffer_list[:3] == [85, 255, 170]:#ack removal
+            print("Ack removed")
+            self.buffer_list = self.buffer_list[3:]
+            return False
         elif len(self.buffer_list)>=3 and self.buffer_list[0]==12:#burst reciever
-            self.READINGS[self.LIST[round((self.buffer_list[1]&240)/16)]]=(self.buffer_list[1]&3)*256+self.buffer_list[2]
-            for i in range(3):
-                self.buffer_list.remove(self.buffer_list[i:i+1])
-            return self.buffer_list ,False
+            self.READINGS[self.READINGS.keys()[round((self.buffer_list[1]&240)/16)]]=(self.buffer_list[1]&3)*256+self.buffer_list[2]
+            self.buffer_list = self.buffer_list[3:]
         elif len(self.buffer_list)>=2 and self.buffer_list[1] != 255:#anti-glitch code...
-            self.buffer_list.remove(self.buffer_list[0:1])
-            return self.buffer_list, False
+            self.buffer_list = self.buffer_list[1:]
+            return False
         elif len(self.buffer_list)>=4 and self.buffer_list[0]==85 and self.buffer_list[1]==255:#sensor reader
-            self.READINGS[self.LIST[round((self.buffer_list[2]&240)/16)]]=(self.buffer_list[2]&3)*256+self.buffer_list[3]
-            for i in range(4):
-                self.buffer_list.remove(self.buffer_list[i:i+1])
-                return self.buffer_list, False
+            sensor_id =round((self.buffer_list[2]&240)/16)
+            sensor_value =(self.buffer_list[2]&3)*256+self.buffer_list[3]
+            print("the reading for",sensor_id, "is now", sensor_value)
+            self.READINGS[sensor_id] = sensor_value
+
+            # self.READINGS[round((self.buffer_list[2]&240)/16)]=(self.buffer_list[2]&3)*256+self.buffer_list[3]
+            self.buffer_list = self.buffer_list[4:]
         else:
-            return self.buffer_list, True
+            return True
 
     def interpret_senseboard(self):
         """This collects data from a queue and sends it to interpret_senseboard_II, it also
@@ -269,22 +274,20 @@ class PySense(object):
         aren't any junk bytes to remove.
         """
         while True:
-            self.ready_to_interpret.wait()
-            while not sensor_bursts.empty():
-                self.buffer_list.append(sensor_bursts.get())
+            "waiting for data"
+            self.buffer_list.append(self.sensor_bursts.get())
+            "found data"
             read_all=False
-
             while not read_all:
                 if self.buffer_list:
-                    self.buffer_list, read_all=self.interpret_senseboard_II()
+                    read_all=self.interpret_senseboard_II()
                 else:
                     read_all=True
             self.ready_to_interpret.clear()
             
     def __init__(self):
         self.sensor_bursts=queue.Queue()
-        self.READINGS={"slider":0,"infrared":0,"microphone":0,"button":0,"input_a":0,"input_b":0,"input_c":0,"input_d":0}
-        self.LIST=["slider","infrared","microphone","button","input_a","input_b","input_c","input_d"]
+        self.READINGS={SLIDER:0, INFRARED:0, MICROPHONE:0, BUTTON:0,INPUT_A:0,INPUT_B:0,INPUT_C:0,INPUT_D:0}
         self.ser = serial.Serial()
         self.burst_length = 0
         self.ready_to_interpret=threading.Event()
@@ -320,10 +323,8 @@ class PySense(object):
                     pass
                 
         print("Threads starting")
-        self.reader=threading.Thread(target=self.reading_senseboard(),daemon=True)
+        self.reader=threading.Thread(target=self.reading_senseboard, daemon=True)
+        self.interpreter=threading.Thread(target=self.interpret_senseboard, daemon=True)
         self.reader.start()
-        # self.interpreter=threading.Thread(target=self.interpret_senseboard())
+        self.interpreter.start()
         print("Threads started")
-
-
-
