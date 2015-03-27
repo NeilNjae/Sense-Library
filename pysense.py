@@ -23,10 +23,6 @@ BURST_HEADER = b'\x0C'
 #class for contolling 1 senseboard
 class PySense(object):
 
-    def message_reciever(self):
-        reader.run()
-        interpreter.run()
-
     def scanWindows(self):
         available = []
         for i in range(256):
@@ -191,6 +187,8 @@ class PySense(object):
         return self.READINGS[sensor_id]
  
     def burstModeSet(self, sensor_id_array):
+        """After being given a list of numbers, it puts those sensors  on burst mode!!
+        """
         # global COMMAND_HEADER
         sensor_id_total_0_to_7 = 0
         sensor_id_total_8_to_15 = 0
@@ -239,16 +237,16 @@ class PySense(object):
         responds to a legitimate reading that is picked up.
         """
         while self.buffer_list and (self.buffer_list[0] != REPLY_HEADER[0] and self.buffer_list[0] != BURST_HEADER[0]):#removes invalid bytes
-            print("Dropping first byte with value", self.buffer_list[0], self.buffer_list[0] != REPLY_HEADER[0])
+            # print("Dropping first byte with value", self.buffer_list[0], self.buffer_list[0] != REPLY_HEADER[0])
             self.buffer_list = self.buffer_list[1:]
         if self.buffer_list[:3] == [85, 255, 170]:#ack removal
-            print("Ack removed")
+            #print("Ack removed")
             self.buffer_list = self.buffer_list[3:]
             return False
         elif len(self.buffer_list)>=3 and self.buffer_list[0]==BURST_HEADER[0]:#burst reciever
             sn = round((self.buffer_list[1]&240)/16)
             sv = (self.buffer_list[1]&3)*256+self.buffer_list[2]
-            print("recieved a burst: sensor", sn, "Value", sv)
+           # print("recieved a burst: sensor", sn, "Value", sv)
             self.READINGS[sn] = sv
             #self.READINGS[[round((self.buffer_list[1]&240)/16)]]=(self.buffer_list[1]&3)*256+self.buffer_list[2]
             self.buffer_list = self.buffer_list[3:]
@@ -258,7 +256,7 @@ class PySense(object):
         elif len(self.buffer_list)>=4 and self.buffer_list[0]==85 and self.buffer_list[1]==255:#sensor reader
             sensor_id =round((self.buffer_list[2]&240)/16)
             sensor_value =(self.buffer_list[2]&3)*256+self.buffer_list[3]
-            print("the reading for",sensor_id, "is now", sensor_value)
+            #print("the reading for",sensor_id, "is now", sensor_value)
             self.READINGS[sensor_id] = sensor_value
 
             # self.READINGS[round((self.buffer_list[2]&240)/16)]=(self.buffer_list[2]&3)*256+self.buffer_list[3]
@@ -311,7 +309,7 @@ class PySense(object):
         elif os.name == 'posix':
             for com in self.scanPosix():
                 try:
-                    self.ser = serial.Serial(com, 115200, timeout=None)
+                    self.ser = serial.Serial(com, 115200, timeout=1)
                     print ("trying to connect to " + str(com))
                     time.sleep(2)
                     if self.ping() == [4,96]: #'55ffaa0460':
