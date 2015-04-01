@@ -71,9 +71,9 @@ class PySense(object):
         self.ser.write(COMMAND_HEADER+b'\x00'+b'\x00')
         reply=self.ser.read(size=5)
         if len(reply) >= 5:
-            return [reply[3],reply[4]]
+            return reply[3],reply[4]
         else:
-            return [0, 0]
+            return 0, 0
     
     def led_on(self, led_id):
         """ Turns a single L.E.D on, shouldn't return anything
@@ -120,13 +120,13 @@ class PySense(object):
     def led_change(self,on_array):
         """ Turns a list of LEDs on, the turns the rest off
         """
-        a= self.led_multi_on(on_array)
+        self.led_multi_on(on_array)
         off_array = [i for i in range(1,8) if i not in on_array]
         # off_array=[]
         # for i in range(1,7):
         #     if i not in on_array:
         #         off_array.append(i)
-        b=self.led_multi_off(off_array)
+        self.led_multi_off(off_array)
     
     def led_scale(self, value, minvalue=0, maxvalue=100, ledno=7):
         """makes all the LEDs lower than a certain percentage of the number of L.E.D's turn on,
@@ -219,7 +219,7 @@ class PySense(object):
         self.ser.write(COMMAND_HEADER + b'\xA0\x00')
         self.ser.write(COMMAND_HEADER + b'\xA1\x00')
         
-    def reading_senseboard(self):
+    def read_senseboard(self):
         """This function gives interpret_senseboard data from the senseboard
         """
         while True:
@@ -228,40 +228,48 @@ class PySense(object):
             # print("Read", byte_read)
             self.sensor_bursts.put(byte_read)
 
-    def interpret_senseboard_II(self):
-        """This removes any junk bytes at the beginning of buffer_list and 
+    def parse_buffer(self):
+        """This removes any junk bytes at the beginning of response_buffer and 
         responds to a legitimate reading that is picked up.
         """
-        while self.buffer_list and (self.buffer_list[0] != REPLY_HEADER[0] and self.buffer_list[0] != BURST_HEADER[0]):#removes invalid bytes
-            # print("Dropping first byte with value", self.buffer_list[0], self.buffer_list[0] != REPLY_HEADER[0])
-            self.buffer_list = self.buffer_list[1:]
-        if self.buffer_list[:3] == [85, 255, 170]:#ack removal
-            #print("Ack removed")
-            self.buffer_list = self.buffer_list[3:]
-            return False
-        elif len(self.buffer_list)>=3 and self.buffer_list[0]==BURST_HEADER[0]:#burst reciever
-            sn = round((self.buffer_list[1]&240)/16)
-            sv = (self.buffer_list[1]&3)*256+self.buffer_list[2]
-           # print("recieved a burst: sensor", sn, "Value", sv)
-            self.READINGS[sn] = sv
-            #self.READINGS[[round((self.buffer_list[1]&240)/16)]]=(self.buffer_list[1]&3)*256+self.buffer_list[2]
-            self.buffer_list = self.buffer_list[3:]
-        elif len(self.buffer_list)>=2 and self.buffer_list[0] == REPLY_HEADER[0] and self.buffer_list[1] != REPLY_HEADER[1]:#anti-glitch code...
-            self.buffer_list = self.buffer_list[1:]
-            return False
-        elif len(self.buffer_list)>=4 and self.buffer_list[0]==85 and self.buffer_list[1]==255:#sensor reader
-            sensor_id =round((self.buffer_list[2]&240)/16)
-            sensor_value =(self.buffer_list[2]&3)*256+self.buffer_list[3]
+        # Remove any invalid bytes from the start of the buffer. 
+        # Finish when the buffer starts with the first byte of a possible reply
+        while (self.response_buffer and 
+                self.response_buffer[0] != REPLY_HEADER[0] and 
+                self.response_buffer[0] != BURST_HEADER[0]):#removes invalid bytes
+            # print("Dropping first byte with value", self.response_buffer[0], self.response_buffer[0] != REPLY_HEADER[0])
+            self.response_buffer = self.response_buffer[1:]
+
+        # Flag to say if the buffer contains an incomplete mesage
+        incomplete_message_read = False
+        if self.response_buffer[:len(REPLY_ACK)] == [b for b in REPLY_ACK]:#ack removal
+            self.response_buffer = self.response_buffer[len(REPLY_ACK):]
+        elif len(self.response_buffer) >= 3 and self.response_buffer[0] == BURST_HEADER[0]:#burst reciever
+            sensor_id = round((self.response_buffer[1]&240)/16)
+            sensor_value = (self.response_buffer[1]&3)*256+self.response_buffer[2]
+           # print("recieved a burst: sensor", sensor_id, "Value", sensor_value)
+            self.READINGS[sensor_id] = sensor_value
+            #self.READINGS[[round((self.response_buffer[1]&240)/16)]]=(self.response_buffer[1]&3)*256+self.response_buffer[2]
+            self.response_buffer = self.response_buffer[3:]
+        elif len(self.response_buffer) >= 4 and (
+                self.response_buffer[0] == REPLY_HEADER[0] and 
+                self.response_buffer[1] == REPLY_HEADER[1]:#sensor reader
+            sensor_id =round((self.response_buffer[2]&240)/16)
+            sensor_value =(self.response_buffer[2]&3)*256+self.response_buffer[3]
             #print("the reading for",sensor_id, "is now", sensor_value)
             self.READINGS[sensor_id] = sensor_value
-
-            # self.READINGS[round((self.buffer_list[2]&240)/16)]=(self.buffer_list[2]&3)*256+self.buffer_list[3]
-            self.buffer_list = self.buffer_list[4:]
+            # self.READINGS[round((self.response_buffer[2]&240)/16)]=(self.response_buffer[2]&3)*256+self.response_buffer[3]
+            self.response_buffer = self.response_buffer[4:]
+        elif len(self.response_buffer) >= 2 and (
+                self.response_buffer[0] == REPLY_HEADER[0] and 
+                self.response_buffer[1] != REPLY_HEADER[1]):#anti-glitch code...
+            self.response_buffer = self.response_buffer[1:]
         else:
-            return True
+            incomplete_message_read = True
+        return incomplete_message_read
 
     def interpret_senseboard(self):
-        """This collects data from a queue and sends it to interpret_senseboard_II, it also
+        """This collects data from a queue and sends it to parse_buffer, it also
         puts the thread to sleep (temporarily!) when it can't make a valid reading AND there
         aren't any junk bytes to remove.
         """
@@ -269,61 +277,62 @@ class PySense(object):
             #print("waiting for data")
             bytes_read = self.sensor_bursts.get()
             for b in bytes_read:
-                self.buffer_list.append(b)
-            #self.buffer_list.append(self.sensor_bursts.get())
+                self.response_buffer.append(b)
+            #self.response_buffer.append(self.sensor_bursts.get())
             #print("found data")
-            read_all=False
-            while not read_all:
+            inccomplete_message_in_buffer = False
+            while not inccomplete_message_in_buffer:
              #   print("Starting interpretation")
-                if self.buffer_list:
-              #      print("Interpreting buffer of", len(self.buffer_list), "bytes")
-                    read_all=self.interpret_senseboard_II()
+                if self.response_buffer:
+              #      print("Interpreting buffer of", len(self.response_buffer), "bytes")
+                    inccomplete_message_in_buffer = self.parse_buffer()
                 else:
                #     print("Buffer empty")
-                    read_all=True
+                    inccomplete_message_in_buffer = True
             
     def __init__(self):
         self.sensor_bursts=queue.Queue()
-        self.READINGS={0:0, 1:0, 2:0, 3:0,4:0,5:0,6:0,7:0}
+        self.READINGS={SLIDER: 0, 
+            INFRARED: 0,
+            MICROPHONE: 0,
+            BUTTON: 0,
+            INPUT_A: 0,
+            INPUT_B: 0,
+            INPUT_C: 0,
+            INPUT_D: 0}
         self.ser = serial.Serial()
         self.burst_length = 0
-        self.buffer_list=[]
+        self.response_buffer=[]
 
         if os.name == 'nt':
-            for com in self.scanWindows():
-                self.ser = serial.Serial(int(com[0]), 115200, timeout=1)
-                time.sleep(2)
-                if self.pingSenseBoard() == '55ffaa0460':
-                    print ("Opening Serial port...")
-                    time.sleep(2)
-                    print ("Connected to sense at port: " + self.ser.name)
-                    break
-                else:
-                    self.ser.close()
-            
+            possible_ports = self.scanWindows()
         elif os.name == 'posix':
-            for com in self.scanPosix():
-                try:
-                    # skip if com is in connected ports
-                    if com not in self.__class__.connected_ports:
+            possible_ports = self.scanPosix()
+        for com in possible_ports:
+            try:
+                # skip if com is in connected ports
+                if com not in self.__class__.connected_ports:
+                    if os.name == 'nt':
+                        self.ser = serial.Serial(int(com[0]), 115200, timeout=None)
+                    elif os.name == 'posix':
                         self.ser = serial.Serial(com, 115200, timeout=None)
-                        print ("trying to connect to " + str(com))
+                    print ("trying to connect to " + str(com))
+                    time.sleep(2)
+                    if self.ping() == (4,96): #'55ffaa0460':
+                        print ("Opening Serial port...")
                         time.sleep(2)
-                        if self.ping() == [4,96]: #'55ffaa0460':
-                            print ("Opening Serial port...")
-                            time.sleep(2)
-                            print ("Connected to sense at port: " + self.ser.name)
-                            # update connected ports
-                            self.__class__.connected_ports.append(com)
-                            break
-                        else:
-                            self.ser.close()
+                        print ("Connected to sense at port: " + self.ser.name)
+                        # update connected ports
+                        self.__class__.connected_ports.append(com)
+                        break
+                    else:
+                        self.ser.close()
 
-                except serial.SerialException:
-                    pass
+            except serial.SerialException:
+                pass
                 
         print("Threads starting")
-        self.reader=threading.Thread(target=self.reading_senseboard, daemon=True)
+        self.reader=threading.Thread(target=self.read_senseboard, daemon=True)
         self.interpreter=threading.Thread(target=self.interpret_senseboard, daemon=True)
         self.reader.start()
         self.interpreter.start()
